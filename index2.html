@@ -63,6 +63,13 @@
         const span = document.createElement("span");
         span.textContent = data;
 
+        if(op == -1 && data == "" && j < diffs.length - 1 && diffs[j + 1][0] == 1 && diffs[j + 1][1] == "") {
+          continue;
+        }
+        if(op == 1 && data == "" && 0 < j && diffs[j - 1][0] == -1 && diffs[j - 1][1] == "") {
+          continue;
+        }
+
         if (op === 1) {
           span.className = "added";
 
