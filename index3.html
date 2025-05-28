@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Sephiroth Diff text diff editor (This software uses diff-match-patch (Apache 2.0))</title>
+  <style>
+    textarea { width: 45%; height: 150px; margin: 10px; }
+    .diff { margin-top: 20px; font-family: monospace; white-space: pre-wrap; }
+    .added { background-color: #d4fcdc; }
+    .removed { background-color: #ffd6d6; }
+    .chunk { margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 8px; }
+    .apply-btn { margin-left: 5px; font-size: 0.9em; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
+</head>
+<body>
+  <h2>Sephiroth Diff text diff editor (This software uses diff-match-patch (Apache 2.0))</h2>
+  <a href="index2.html">Memory saving version is here (no Undo/Redo function version)</a><br>
+  <textarea id="leftText" placeholder="左のテキスト"></textarea>
+  <textarea id="rightText" placeholder="右のテキスト"></textarea><br>
+  <button onclick="compareTexts()">compare</button>
+  <div id="diffResult" class="diff"></div>
+
+  <script>
+    const dmp = new diff_match_patch();
+    const historyStack = [];
+    const redoStack = [];
+
+    document.addEventListener("keydown", function (e) {
+      if (e.ctrlKey && e.key === "z") {
+        e.preventDefault();
+        if (historyStack.length > 0) {
+          const { left, right } = historyStack.pop();
+          redoStack.push({
+            left: document.getElementById("leftText").value,
+            right: document.getElementById("rightText").value,
+          });
+          document.getElementById("leftText").value = left;
+          document.getElementById("rightText").value = right;
+          compareTexts();
+        }
+      } else if (e.ctrlKey && e.key === "y") {
+        e.preventDefault();
+        if (redoStack.length > 0) {
+          const { left, right } = redoStack.pop();
+          historyStack.push({
+            left: document.getElementById("leftText").value,
+            right: document.getElementById("rightText").value,
+          });
+          document.getElementById("leftText").value = left;
+          document.getElementById("rightText").value = right;
+          compareTexts();
+        }
+      }
+    });
+
+    function compareTexts() {
+      const left = document.getElementById("leftText").value;
+      const right = document.getElementById("rightText").value;
+      const container = document.getElementById("diffResult");
+      container.innerHTML = "";
+
+      let diffs = dmp.diff_main(left, right);
+      dmp.diff_cleanupSemantic(diffs);
+
+      const touchDiff = [];
+
+      for (let j = 0; j < diffs.length; j++) {
+        if (j < diffs.length - 1 && diffs[j][0] == -1 && diffs[j + 1][0] == 0) {
+          touchDiff.push(diffs[j], [1, ""]);
+        } else if (j > 0 && diffs[j][0] == 1 && diffs[j - 1][0] == 0) {
+          touchDiff.push([-1, ""], diffs[j]);
+        } else {
+          touchDiff.push(diffs[j]);
+        }
+      }
+
+      diffs = touchDiff;
+
+      const div = document.createElement("div");
+      div.className = "chunk";
+
+      for (let j = 0; j < diffs.length; j++) {
+        const [op, data] = diffs[j];
+        const span = document.createElement("span");
+        span.textContent = data;
+
+        if(op == -1 && data == "" && j < diffs.length - 1 && diffs[j + 1][0] == 1 && diffs[j + 1][1] == "") {
+          continue;
+        }
+        if(op == 1 && data == "" && 0 < j && diffs[j - 1][0] == -1 && diffs[j - 1][1] == "") {
+          continue;
+        }
+
+        if (op === 1) {
+          span.className = "added";
+          const btn = document.createElement("button");
+          btn.className = "apply-btn";
+          btn.textContent = "→ Apply";
+          btn.onclick = () => {
+            historyStack.push({
+              left: document.getElementById("leftText").value,
+              right: document.getElementById("rightText").value,
+            });
+            redoStack.length = 0;
+
+            const newDiffs = JSON.parse(JSON.stringify(diffs));
+            let k = j - 1;
+            while (k >= 0 && newDiffs[k][0] === 1) k--;
+            if (k < 0) {
+              newDiffs[j][0] = 0;
+            } else if (newDiffs[k][0] == -1) {
+              newDiffs[j][0] = 0;
+              newDiffs[k][0] = 1;
+            } else {
+              newDiffs[j][0] = -1;
+            }
+            let newLeft = "";
+            for (const [op2, data2] of newDiffs) {
+              if (op2 !== 1) newLeft += data2;
+            }
+            document.getElementById("leftText").value = newLeft;
+            compareTexts();
+          };
+          div.appendChild(span);
+          div.appendChild(btn);
+
+        } else if (op === -1) {
+          span.className = "removed";
+          const btn = document.createElement("button");
+          btn.className = "apply-btn";
+          btn.textContent = "← Apply";
+          btn.onclick = () => {
+            historyStack.push({
+              left: document.getElementById("leftText").value,
+              right: document.getElementById("rightText").value,
+            });
+            redoStack.length = 0;
+
+            const newDiffs = JSON.parse(JSON.stringify(diffs));
+            let k = j + 1;
+            while (k < newDiffs.length && newDiffs[k][0] === -1) k++;
+            if (newDiffs.length <= k) {
+              newDiffs[j][0] = 0;
+            } else if (newDiffs[k][0] == 1) {
+              newDiffs[j][0] = 0;
+              newDiffs[k][0] = -1;
+            } else {
+              newDiffs[j][0] = 1;
+            }
+            let newRight = "";
+            for (const [op2, data2] of newDiffs) {
+              if (op2 !== -1) newRight += data2;
+            }
+            document.getElementById("rightText").value = newRight;
+            compareTexts();
+          };
+          div.appendChild(span);
+          div.appendChild(btn);
+
+        } else {
+          div.appendChild(span);
+        }
+      }
+
+      container.appendChild(div);
+    }
+  </script>
+</body>
+</html>
